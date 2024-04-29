@@ -6,7 +6,6 @@ use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError, Variab
 use crate::{
     alloc::{AllocVar, AllocationMode},
     select::CondSelectGadget,
-    Assignment,
 };
 
 use super::Boolean;
@@ -22,23 +21,13 @@ use super::Boolean;
 pub struct AllocatedBool<F: Field> {
     pub(super) variable: Variable,
     pub(super) cs: ConstraintSystemRef<F>,
-}
-
-pub(crate) fn bool_to_field<F: Field>(val: impl Borrow<bool>) -> F {
-    F::from(*val.borrow())
+    pub(super) value: Option<bool>,
 }
 
 impl<F: Field> AllocatedBool<F> {
     /// Get the assigned value for `self`.
     pub fn value(&self) -> Result<bool, SynthesisError> {
-        let value = self.cs.assigned_value(self.variable).get()?;
-        if value.is_zero() {
-            Ok(false)
-        } else if value.is_one() {
-            Ok(true)
-        } else {
-            unreachable!("Incorrect value assigned: {:?}", value);
-        }
+        self.value.ok_or(SynthesisError::AssignmentMissing)
     }
 
     /// Get the R1CS variable for `self`.
@@ -52,8 +41,12 @@ impl<F: Field> AllocatedBool<F> {
         cs: ConstraintSystemRef<F>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
     ) -> Result<Self, SynthesisError> {
-        let variable = cs.new_witness_variable(|| f().map(bool_to_field))?;
-        Ok(Self { variable, cs })
+        let value = f().map(|b| *b.borrow());
+        Ok(Self {
+            variable: cs.new_witness_variable(|| value.map(F::from))?,
+            cs,
+            value: value.ok(),
+        })
     }
 
     /// Performs an XOR operation over the two operands, returning
@@ -64,6 +57,7 @@ impl<F: Field> AllocatedBool<F> {
         Ok(Self {
             variable,
             cs: self.cs.clone(),
+            value: self.value.map(|v| !v),
         })
     }
 
@@ -189,25 +183,28 @@ impl<F: Field> AllocVar<bool, F> for AllocatedBool<F> {
         let ns = cs.into();
         let cs = ns.cs();
         if mode == AllocationMode::Constant {
-            let variable = if *f()?.borrow() {
-                Variable::One
-            } else {
-                Variable::Zero
-            };
-            Ok(Self { variable, cs })
+            let value = *f()?.borrow();
+            Ok(Self {
+                variable: if value { Variable::One } else { Variable::Zero },
+                cs,
+                value: Some(value),
+            })
         } else {
+            let value = f().map(|b| *b.borrow());
             let variable = if mode == AllocationMode::Input {
-                cs.new_input_variable(|| f().map(bool_to_field))?
+                cs.new_input_variable(|| value.map(F::from))?
             } else {
-                cs.new_witness_variable(|| f().map(bool_to_field))?
+                cs.new_witness_variable(|| value.map(F::from))?
             };
 
             // Constrain: (1 - a) * a = 0
             // This constrains a to be either 0 or 1.
-
             cs.enforce_constraint(lc!() + Variable::One - variable, lc!() + variable, lc!())?;
-
-            Ok(Self { variable, cs })
+            Ok(Self {
+                variable,
+                cs,
+                value: value.ok(),
+            })
         }
     }
 }
