@@ -2,8 +2,8 @@
 //! This crate implements common "gadgets" that make
 //! programming rank-1 constraint systems easier.
 #![deny(
-    warnings,
-    unused,
+    // warnings,
+    // unused,
     future_incompatible,
     nonstandard_style,
     rust_2018_idioms

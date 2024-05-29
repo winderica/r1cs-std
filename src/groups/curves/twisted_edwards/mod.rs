@@ -651,6 +651,7 @@ where
                     Ok(ge)
                 }
             },
+            _ => unimplemented!(),
         }
     }
 }
