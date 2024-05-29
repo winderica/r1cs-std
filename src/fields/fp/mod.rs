@@ -703,10 +703,11 @@ impl<F: PrimeField> AllocVar<F, F> for AllocatedFp<F> {
                 value = Some(*f()?.borrow());
                 value.ok_or(SynthesisError::AssignmentMissing)
             };
-            let variable = if mode == AllocationMode::Input {
-                cs.new_input_variable(value_generator)?
-            } else {
-                cs.new_witness_variable(value_generator)?
+            let variable = match mode {
+                AllocationMode::Input => cs.new_input_variable(value_generator)?,
+                AllocationMode::Witness => cs.new_witness_variable(value_generator)?,
+                AllocationMode::Committed => cs.new_committed_variable(value_generator)?,
+                _ => unreachable!(),
             };
             Ok(Self::new(value, variable, cs))
         }

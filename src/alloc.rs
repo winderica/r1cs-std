@@ -19,19 +19,22 @@ pub enum AllocationMode {
     /// Indicate to the `ConstraintSystem` that the high-level variable should
     /// be allocated as a private witness to the `ConstraintSystem`.
     Witness = 2,
+
+    Committed = 3,
 }
 
 impl AllocationMode {
     /// Outputs the maximum according to the relation `Constant < Input <
     /// Witness`.
     pub fn max(&self, other: Self) -> Self {
-        use AllocationMode::*;
-        match (self, other) {
-            (Constant, _) => other,
-            (Input, Constant) => *self,
-            (Input, _) => other,
-            (Witness, _) => *self,
-        }
+        // use AllocationMode::*;
+        // match (self, other) {
+        //     (Constant, _) => other,
+        //     (Input, Constant) => *self,
+        //     (Input, _) => other,
+        //     (Witness, _) => *self,
+        // }
+        unimplemented!()
     }
 }
 
@@ -75,6 +78,16 @@ pub trait AllocVar<V: ?Sized, F: Field>: Sized {
         f: impl FnOnce() -> Result<T, SynthesisError>,
     ) -> Result<Self, SynthesisError> {
         Self::new_variable(cs, f, AllocationMode::Witness)
+    }
+
+    /// Allocates a new commitment of type `Self` in the `ConstraintSystem`
+    /// `cs`.
+    #[tracing::instrument(target = "r1cs", skip(cs, f))]
+    fn new_committed<T: Borrow<V>>(
+        cs: impl Into<Namespace<F>>,
+        f: impl FnOnce() -> Result<T, SynthesisError>,
+    ) -> Result<Self, SynthesisError> {
+        Self::new_variable(cs, f, AllocationMode::Committed)
     }
 
     /// Allocates a new constant or private witness of type `Self` in the
