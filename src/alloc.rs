@@ -1,7 +1,7 @@
-use crate::Vec;
 use ark_ff::Field;
 use ark_relations::r1cs::{Namespace, SynthesisError};
 use core::borrow::Borrow;
+use ark_std::vec::Vec;
 
 /// Describes the mode that a variable should be allocated in within
 /// a `ConstraintSystem`.

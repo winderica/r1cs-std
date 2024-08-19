@@ -1,7 +1,6 @@
 use ark_relations::r1cs::SynthesisError;
 
-use crate::boolean::Boolean;
-use crate::eq::EqGadget;
+use crate::{boolean::Boolean, eq::EqGadget};
 
 use super::*;
 
@@ -26,24 +25,46 @@ impl<F: Field> EqGadget<F> for Boolean<F> {
         use Boolean::*;
         let one = Variable::One;
         // We will use the following trick: a == b <=> a - b == 0
-        // This works because a - b == 0 if and only if a = 0 and b = 0, or a = 1 and b = 1,
-        // which is exactly the definition of a == b.
+        // This works because a - b == 0 if and only if a = 0 and b = 0, or a = 1 and b
+        // = 1, which is exactly the definition of a == b.
         let difference = match (self, other) {
             // 1 == 1; 0 == 0
             (Constant(true), Constant(true)) | (Constant(false), Constant(false)) => return Ok(()),
             // false != true
             (Constant(_), Constant(_)) => return Err(SynthesisError::Unsatisfiable),
             // 1 - a
-            (Constant(true), Var(a)) | (Var(a), Constant(true)) => lc!() + one - a.variable(),
+            (Constant(true), Var(a)) | (Var(a), Constant(true)) => {
+                if a.enable_lc {
+                    lc!() + one - a.variable()
+                } else {
+                    lc!()
+                }
+            },
             // a - 0 = a
-            (Constant(false), Var(a)) | (Var(a), Constant(false)) => lc!() + a.variable(),
+            (Constant(false), Var(a)) | (Var(a), Constant(false)) => {
+                if a.enable_lc {
+                    lc!() + a.variable()
+                } else {
+                    lc!()
+                }
+            },
             // b - a,
-            (Var(a), Var(b)) => lc!() + b.variable() - a.variable(),
+            (Var(a), Var(b)) => {
+                if a.enable_lc || b.enable_lc {
+                    lc!() + b.variable() - a.variable()
+                } else {
+                    lc!()
+                }
+            },
         };
 
         if condition != &Constant(false) {
             let cs = self.cs().or(other.cs()).or(condition.cs());
-            cs.enforce_constraint(lc!() + difference, condition.lc(), lc!())?;
+            if cs.should_construct_matrices() {
+                cs.enforce_constraint(lc!() + difference, condition.lc(), lc!())?;
+            } else {
+                cs.borrow_mut().unwrap().num_constraints += 1;
+            }
         }
         Ok(())
     }
@@ -57,24 +78,46 @@ impl<F: Field> EqGadget<F> for Boolean<F> {
         use Boolean::*;
         let one = Variable::One;
         // We will use the following trick: a != b <=> a + b == 1
-        // This works because a + b == 1 if and only if a = 0 and b = 1, or a = 1 and b = 0,
-        // which is exactly the definition of a != b.
+        // This works because a + b == 1 if and only if a = 0 and b = 1, or a = 1 and b
+        // = 0, which is exactly the definition of a != b.
         let sum = match (self, other) {
             // 1 != 0; 0 != 1
             (Constant(true), Constant(false)) | (Constant(false), Constant(true)) => return Ok(()),
             // false == false and true == true
             (Constant(_), Constant(_)) => return Err(SynthesisError::Unsatisfiable),
             // 1 + a
-            (Constant(true), Var(a)) | (Var(a), Constant(true)) => lc!() + one + a.variable(),
+            (Constant(true), Var(a)) | (Var(a), Constant(true)) => {
+                if a.enable_lc {
+                    lc!() + one + a.variable()
+                } else {
+                    lc!()
+                }
+            },
             // a + 0 = a
-            (Constant(false), Var(a)) | (Var(a), Constant(false)) => lc!() + a.variable(),
+            (Constant(false), Var(a)) | (Var(a), Constant(false)) => {
+                if a.enable_lc {
+                    lc!() + a.variable()
+                } else {
+                    lc!()
+                }
+            },
             // b + a,
-            (Var(a), Var(b)) => lc!() + b.variable() + a.variable(),
+            (Var(a), Var(b)) => {
+                if a.enable_lc || b.enable_lc {
+                    lc!() + b.variable() + a.variable()
+                } else {
+                    lc!()
+                }
+            },
         };
 
         if should_enforce != &Constant(false) {
             let cs = self.cs().or(other.cs()).or(should_enforce.cs());
-            cs.enforce_constraint(sum, should_enforce.lc(), lc!() + one)?;
+            if cs.should_construct_matrices() {
+                cs.enforce_constraint(sum, should_enforce.lc(), lc!() + one)?;
+            } else {
+                cs.borrow_mut().unwrap().num_constraints += 1;
+            }
         }
         Ok(())
     }

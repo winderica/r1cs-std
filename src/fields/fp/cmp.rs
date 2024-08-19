@@ -144,10 +144,14 @@ impl<F: PrimeField> FpVar<F> {
     /// verify that.
     fn enforce_smaller_than_unchecked(&self, other: &FpVar<F>) -> Result<(), SynthesisError> {
         let is_smaller_than = self.is_smaller_than_unchecked(other)?;
-        let lc_one = lc!() + Variable::One;
-        [self, other]
-            .cs()
-            .enforce_constraint(is_smaller_than.lc(), lc_one.clone(), lc_one)
+        let cs = [self, other].cs();
+        if cs.should_construct_matrices() {
+            let lc_one = lc!() + Variable::One;
+            cs.enforce_constraint(is_smaller_than.lc(), lc_one.clone(), lc_one)?;
+        } else {
+            cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+        Ok(())
     }
 }
 
