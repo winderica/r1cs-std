@@ -26,6 +26,7 @@ pub struct AllocatedFp<F: PrimeField> {
     pub variable: Variable,
     /// The constraint system that `self` was allocated in.
     pub cs: ConstraintSystemRef<F>,
+    enable_lc: bool,
 }
 
 impl<F: PrimeField> AllocatedFp<F> {
@@ -35,6 +36,7 @@ impl<F: PrimeField> AllocatedFp<F> {
         Self {
             value,
             variable,
+            enable_lc: cs.should_construct_matrices(),
             cs,
         }
     }
@@ -52,7 +54,8 @@ pub enum FpVar<F: PrimeField> {
 }
 
 impl<F: PrimeField> FpVar<F> {
-    /// Decomposes `self` into a vector of `bits` and a remainder `rest` such that
+    /// Decomposes `self` into a vector of `bits` and a remainder `rest` such
+    /// that
     /// * `bits.len() == size`, and
     /// * `rest == 0`.
     pub fn to_bits_le_with_top_bits_zero(
@@ -105,7 +108,11 @@ impl<F: PrimeField> From<Boolean<F>> for FpVar<F> {
         } else {
             // `other` is a variable
             let cs = other.cs();
-            let variable = cs.new_lc(other.lc()).unwrap();
+            let variable = cs.new_lc(if cs.should_construct_matrices() {
+                other.lc()
+            } else {
+                lc!()
+            }).unwrap();
             Self::Var(AllocatedFp::new(
                 other.value().ok().map(|b| F::from(b as u8)),
                 variable,
@@ -129,14 +136,18 @@ impl<F: PrimeField> AllocatedFp<F> {
     /// `zero`, else it outputs `one`.
     pub fn from(other: Boolean<F>) -> Self {
         let cs = other.cs();
-        let variable = cs.new_lc(other.lc()).unwrap();
+        let variable = cs.new_lc(if cs.should_construct_matrices() {
+            other.lc()
+        } else {
+            lc!()
+        }).unwrap();
         Self::new(other.value().ok().map(|b| F::from(b as u8)), variable, cs)
     }
 
     /// Returns the value assigned to `self` in the underlying constraint system
     /// (if a value was assigned).
     pub fn value(&self) -> Result<F, SynthesisError> {
-        self.cs.assigned_value(self.variable).get()
+        self.value.ok_or(SynthesisError::AssignmentMissing)
     }
 
     /// Outputs `self + other`.
@@ -151,7 +162,11 @@ impl<F: PrimeField> AllocatedFp<F> {
 
         let variable = self
             .cs
-            .new_lc(lc!() + self.variable + other.variable)
+            .new_lc(if self.enable_lc {
+                lc!() + self.variable + other.variable
+            } else {
+                lc!()
+            })
             .unwrap();
         AllocatedFp::new(value, variable, self.cs.clone())
     }
@@ -177,7 +192,9 @@ impl<F: PrimeField> AllocatedFp<F> {
             } else {
                 value += variable.value.unwrap();
             }
-            new_lc = new_lc + variable.variable;
+            if variable.enable_lc {
+                new_lc = new_lc + variable.variable;
+            }
             num_iters += 1;
         }
         assert_ne!(num_iters, 0);
@@ -203,7 +220,11 @@ impl<F: PrimeField> AllocatedFp<F> {
 
         let variable = self
             .cs
-            .new_lc(lc!() + self.variable - other.variable)
+            .new_lc(if self.enable_lc {
+                lc!() + self.variable - other.variable
+            } else {
+                lc!()
+            })
             .unwrap();
         AllocatedFp::new(value, variable, self.cs.clone())
     }
@@ -217,13 +238,18 @@ impl<F: PrimeField> AllocatedFp<F> {
             Ok(self.value.get()? * &other.value.get()?)
         })
         .unwrap();
-        self.cs
-            .enforce_constraint(
-                lc!() + self.variable,
-                lc!() + other.variable,
-                lc!() + product.variable,
-            )
-            .unwrap();
+        if self.enable_lc {
+            self.cs
+                .enforce_constraint(
+                    lc!() + self.variable,
+                    lc!() + other.variable,
+                    lc!() + product.variable,
+                )
+                .unwrap();
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+
         product
     }
 
@@ -238,7 +264,11 @@ impl<F: PrimeField> AllocatedFp<F> {
             let value = self.value.map(|val| val + other);
             let variable = self
                 .cs
-                .new_lc(lc!() + self.variable + (other, Variable::One))
+                .new_lc(if self.enable_lc {
+                    lc!() + self.variable + (other, Variable::One)
+                } else {
+                    lc!()
+                })
                 .unwrap();
             AllocatedFp::new(value, variable, self.cs.clone())
         }
@@ -261,7 +291,14 @@ impl<F: PrimeField> AllocatedFp<F> {
             self.clone()
         } else {
             let value = self.value.map(|val| val * other);
-            let variable = self.cs.new_lc(lc!() + (other, self.variable)).unwrap();
+            let variable = self
+                .cs
+                .new_lc(if self.enable_lc {
+                    lc!() + (other, self.variable)
+                } else {
+                    lc!()
+                })
+                .unwrap();
             AllocatedFp::new(value, variable, self.cs.clone())
         }
     }
@@ -272,7 +309,11 @@ impl<F: PrimeField> AllocatedFp<F> {
     #[tracing::instrument(target = "r1cs")]
     pub fn double(&self) -> Result<Self, SynthesisError> {
         let value = self.value.map(|val| val.double());
-        let variable = self.cs.new_lc(lc!() + self.variable + self.variable)?;
+        let variable = self.cs.new_lc(if self.enable_lc {
+            lc!() + self.variable + self.variable
+        } else {
+            lc!()
+        })?;
         Ok(Self::new(value, variable, self.cs.clone()))
     }
 
@@ -294,7 +335,14 @@ impl<F: PrimeField> AllocatedFp<F> {
         if let Some(val) = self.value.as_mut() {
             *val = -(*val);
         }
-        self.variable = self.cs.new_lc(lc!() - self.variable).unwrap();
+        self.variable = self
+            .cs
+            .new_lc(if self.enable_lc {
+                lc!() - self.variable
+            } else {
+                lc!()
+            })
+            .unwrap();
         self
     }
 
@@ -315,11 +363,16 @@ impl<F: PrimeField> AllocatedFp<F> {
             Ok(self.value.get()?.inverse().unwrap_or_else(F::zero))
         })?;
 
-        self.cs.enforce_constraint(
-            lc!() + self.variable,
-            lc!() + inverse.variable,
-            lc!() + Variable::One,
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable,
+                lc!() + inverse.variable,
+                lc!() + Variable::One,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+
         Ok(inverse)
     }
 
@@ -334,11 +387,16 @@ impl<F: PrimeField> AllocatedFp<F> {
     /// This requires *one* constraint.
     #[tracing::instrument(target = "r1cs")]
     pub fn mul_equals(&self, other: &Self, result: &Self) -> Result<(), SynthesisError> {
-        self.cs.enforce_constraint(
-            lc!() + self.variable,
-            lc!() + other.variable,
-            lc!() + result.variable,
-        )
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable,
+                lc!() + other.variable,
+                lc!() + result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+        Ok(())
     }
 
     /// Enforces that `self * self = result`.
@@ -346,11 +404,16 @@ impl<F: PrimeField> AllocatedFp<F> {
     /// This requires *one* constraint.
     #[tracing::instrument(target = "r1cs")]
     pub fn square_equals(&self, result: &Self) -> Result<(), SynthesisError> {
-        self.cs.enforce_constraint(
-            lc!() + self.variable,
-            lc!() + self.variable,
-            lc!() + result.variable,
-        )
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable,
+                lc!() + self.variable,
+                lc!() + result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+        Ok(())
     }
 
     /// Outputs the bit `self == other`.
@@ -424,16 +487,20 @@ impl<F: PrimeField> AllocatedFp<F> {
         // and constraint 2 enforces that if self != other, then `is_not_equal = 1`.
         // Since these are the only possible two cases, `is_not_equal` is always
         // constrained to 0 or 1.
-        self.cs.enforce_constraint(
-            lc!() + self.variable - other.variable,
-            lc!() + multiplier,
-            is_not_equal.lc(),
-        )?;
-        self.cs.enforce_constraint(
-            lc!() + self.variable - other.variable,
-            (!&is_not_equal).lc(),
-            lc!(),
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable - other.variable,
+                lc!() + multiplier,
+                is_not_equal.lc(),
+            )?;
+            self.cs.enforce_constraint(
+                lc!() + self.variable - other.variable,
+                (!&is_not_equal).lc(),
+                lc!(),
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 2;
+        }
         Ok(is_not_equal)
     }
 
@@ -446,11 +513,16 @@ impl<F: PrimeField> AllocatedFp<F> {
         other: &Self,
         should_enforce: &Boolean<F>,
     ) -> Result<(), SynthesisError> {
-        self.cs.enforce_constraint(
-            lc!() + self.variable - other.variable,
-            lc!() + should_enforce.lc(),
-            lc!(),
-        )
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable - other.variable,
+                lc!() + should_enforce.lc(),
+                lc!(),
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+        Ok(())
     }
 
     /// Enforces that self != other if `should_enforce.is_eq(&Boolean::TRUE)`.
@@ -465,8 +537,9 @@ impl<F: PrimeField> AllocatedFp<F> {
         // The high level logic is as follows:
         // We want to check that self - other != 0. We do this by checking that
         // (self - other).inverse() exists. In more detail, we check the following:
-        // If `should_enforce == true`, then we set `multiplier = (self - other).inverse()`,
-        // and check that (self - other) * multiplier == 1. (i.e., that the inverse exists)
+        // If `should_enforce == true`, then we set `multiplier = (self -
+        // other).inverse()`, and check that (self - other) * multiplier == 1.
+        // (i.e., that the inverse exists)
         //
         // If `should_enforce == false`, then we set `multiplier == 0`, and check that
         // (self - other) * 0 == 0, which is always satisfied.
@@ -478,11 +551,16 @@ impl<F: PrimeField> AllocatedFp<F> {
             }
         })?;
 
-        self.cs.enforce_constraint(
-            lc!() + self.variable - other.variable,
-            lc!() + multiplier.variable,
-            should_enforce.lc(),
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable - other.variable,
+                lc!() + multiplier.variable,
+                should_enforce.lc(),
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
+
         Ok(())
     }
 }
@@ -532,14 +610,20 @@ impl<F: PrimeField> ToBitsGadget<F> for AllocatedFp<F> {
         let mut coeff = F::one();
 
         for bit in bits.iter() {
-            lc = &lc + bit.lc() * coeff;
+            if self.enable_lc {
+                lc = &lc + bit.lc() * coeff;
+            }
 
             coeff.double_in_place();
         }
 
-        lc = lc - &self.variable;
+        if self.enable_lc {
+            lc = lc - &self.variable;
 
-        cs.enforce_constraint(lc!(), lc!(), lc)?;
+            cs.enforce_constraint(lc!(), lc!(), lc)?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(bits)
     }
@@ -594,8 +678,8 @@ impl<F: PrimeField> CondSelectGadget<F> for AllocatedFp<F> {
         false_val: &Self,
     ) -> Result<Self, SynthesisError> {
         match cond {
-            &Boolean::Constant(true) => Ok(true_val.clone()),
-            &Boolean::Constant(false) => Ok(false_val.clone()),
+            Boolean::Constant(true) => Ok(true_val.clone()),
+            Boolean::Constant(false) => Ok(false_val.clone()),
             _ => {
                 let cs = cond.cs();
                 let result = Self::new_witness(cs.clone(), || {
@@ -607,11 +691,15 @@ impl<F: PrimeField> CondSelectGadget<F> for AllocatedFp<F> {
                 // r = c * a + (1  - c) * b
                 // r = b + c * (a - b)
                 // c * (a - b) = r - b
-                cs.enforce_constraint(
-                    cond.lc(),
-                    lc!() + true_val.variable - false_val.variable,
-                    lc!() + result.variable - false_val.variable,
-                )?;
+                if cs.should_construct_matrices() {
+                    cs.enforce_constraint(
+                        cond.lc(),
+                        lc!() + true_val.variable - false_val.variable,
+                        lc!() + result.variable - false_val.variable,
+                    )?;
+                } else {
+                    cs.borrow_mut().unwrap().num_constraints += 1;
+                }
 
                 Ok(result)
             },
@@ -627,18 +715,23 @@ impl<F: PrimeField> TwoBitLookupGadget<F> for AllocatedFp<F> {
     fn two_bit_lookup(b: &[Boolean<F>], c: &[Self::TableConstant]) -> Result<Self, SynthesisError> {
         debug_assert_eq!(b.len(), 2);
         debug_assert_eq!(c.len(), 4);
-        let result = Self::new_witness(b.cs(), || {
+        let cs = b.cs();
+        let result = Self::new_witness(cs.clone(), || {
             let lsb = usize::from(b[0].value()?);
             let msb = usize::from(b[1].value()?);
             let index = lsb + (msb << 1);
             Ok(c[index])
         })?;
         let one = Variable::One;
-        b.cs().enforce_constraint(
-            lc!() + b[1].lc() * (c[3] - &c[2] - &c[1] + &c[0]) + (c[1] - &c[0], one),
-            lc!() + b[0].lc(),
-            lc!() + result.variable - (c[0], one) + b[1].lc() * (c[0] - &c[2]),
-        )?;
+        if cs.should_construct_matrices() {
+            cs.enforce_constraint(
+                lc!() + b[1].lc() * (c[3] - &c[2] - &c[1] + &c[0]) + (c[1] - &c[0], one),
+                lc!() + b[0].lc(),
+                lc!() + result.variable - (c[0], one) + b[1].lc() * (c[0] - &c[2]),
+            )?;
+        } else {
+            cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -655,7 +748,8 @@ impl<F: PrimeField> ThreeBitCondNegLookupGadget<F> for AllocatedFp<F> {
     ) -> Result<Self, SynthesisError> {
         debug_assert_eq!(b.len(), 3);
         debug_assert_eq!(c.len(), 4);
-        let result = Self::new_witness(b.cs(), || {
+        let cs = b.cs();
+        let result = Self::new_witness(cs.clone(), || {
             let lsb = usize::from(b[0].value()?);
             let msb = usize::from(b[1].value()?);
             let index = lsb + (msb << 1);
@@ -670,16 +764,20 @@ impl<F: PrimeField> ThreeBitCondNegLookupGadget<F> for AllocatedFp<F> {
             Ok(y)
         })?;
 
-        let y_lc = b0b1.lc() * (c[3] - &c[2] - &c[1] + &c[0])
-            + b[0].lc() * (c[1] - &c[0])
-            + b[1].lc() * (c[2] - &c[0])
-            + (c[0], Variable::One);
-        // enforce y * (1 - 2 * b_2) == res
-        b.cs().enforce_constraint(
-            y_lc.clone(),
-            b[2].lc() * F::from(2u64).neg() + (F::one(), Variable::One),
-            lc!() + result.variable,
-        )?;
+        if cs.should_construct_matrices() {
+            let y_lc = b0b1.lc() * (c[3] - &c[2] - &c[1] + &c[0])
+                + b[0].lc() * (c[1] - &c[0])
+                + b[1].lc() * (c[2] - &c[0])
+                + (c[0], Variable::One);
+            // enforce y * (1 - 2 * b_2) == res
+            cs.enforce_constraint(
+                y_lc.clone(),
+                b[2].lc() * F::from(2u64).neg() + (F::one(), Variable::One),
+                lc!() + result.variable,
+            )?;
+        } else {
+            cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -695,7 +793,11 @@ impl<F: PrimeField> AllocVar<F, F> for AllocatedFp<F> {
         let cs = ns.cs();
         if mode == AllocationMode::Constant {
             let v = *f()?.borrow();
-            let lc = cs.new_lc(lc!() + (v, Variable::One))?;
+            let lc = cs.new_lc(if cs.should_construct_matrices() {
+                lc!() + (v, Variable::One)
+            } else {
+                lc!()
+            })?;
             Ok(Self::new(Some(v), lc, cs))
         } else {
             let mut value = None;

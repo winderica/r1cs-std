@@ -78,11 +78,15 @@ impl<F: PrimeField> CondSelectGadget<F> for Boolean<F> {
                     //   0  |   1   |   0  |    1
                     //   1  |   0   |   0  |    0
                     //   1  |   1   |   0  |    1
-                    cs.enforce_constraint(
-                        cond.lc(),
-                        lc!() + a.lc() - b.lc(),
-                        lc!() + result.lc() - b.lc(),
-                    )?;
+                    if cs.should_construct_matrices() {
+                        cs.enforce_constraint(
+                            cond.lc(),
+                            lc!() + a.lc() - b.lc(),
+                            lc!() + result.lc() - b.lc(),
+                        )?;
+                    } else {
+                        cs.borrow_mut().unwrap().num_constraints += 1;
+                    }
 
                     Ok(result)
                 },

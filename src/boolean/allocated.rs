@@ -1,4 +1,4 @@
-use core::borrow::Borrow;
+use core::borrow::{Borrow, BorrowMut};
 
 use ark_ff::{Field, PrimeField};
 use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError, Variable};
@@ -6,7 +6,6 @@ use ark_relations::r1cs::{ConstraintSystemRef, Namespace, SynthesisError, Variab
 use crate::{
     alloc::{AllocVar, AllocationMode},
     select::CondSelectGadget,
-    Assignment,
 };
 
 use super::Boolean;
@@ -22,23 +21,23 @@ use super::Boolean;
 pub struct AllocatedBool<F: Field> {
     pub(super) variable: Variable,
     pub(super) cs: ConstraintSystemRef<F>,
-}
-
-pub(crate) fn bool_to_field<F: Field>(val: impl Borrow<bool>) -> F {
-    F::from(*val.borrow())
+    pub(super) enable_lc: bool,
+    pub(super) value: Option<bool>,
 }
 
 impl<F: Field> AllocatedBool<F> {
+    pub fn new(value: Option<bool>, variable: Variable, cs: ConstraintSystemRef<F>) -> Self {
+        Self {
+            value,
+            variable,
+            enable_lc: cs.should_construct_matrices(),
+            cs,
+        }
+    }
+
     /// Get the assigned value for `self`.
     pub fn value(&self) -> Result<bool, SynthesisError> {
-        let value = self.cs.assigned_value(self.variable).get()?;
-        if value.is_zero() {
-            Ok(false)
-        } else if value.is_one() {
-            Ok(true)
-        } else {
-            unreachable!("Incorrect value assigned: {:?}", value);
-        }
+        self.value.ok_or(SynthesisError::AssignmentMissing)
     }
 
     /// Get the R1CS variable for `self`.
@@ -52,18 +51,29 @@ impl<F: Field> AllocatedBool<F> {
         cs: ConstraintSystemRef<F>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
     ) -> Result<Self, SynthesisError> {
-        let variable = cs.new_witness_variable(|| f().map(bool_to_field))?;
-        Ok(Self { variable, cs })
+        let value = f().map(|b| *b.borrow());
+        Ok(Self {
+            variable: cs.new_witness_variable(|| value.map(F::from))?,
+            enable_lc: cs.should_construct_matrices(),
+            cs,
+            value: value.ok(),
+        })
     }
 
     /// Performs an XOR operation over the two operands, returning
     /// an `AllocatedBool`.
     #[tracing::instrument(target = "r1cs")]
     pub fn not(&self) -> Result<Self, SynthesisError> {
-        let variable = self.cs.new_lc(lc!() + Variable::One - self.variable)?;
+        let variable = self.cs.new_lc(if self.enable_lc {
+            lc!() + Variable::One - self.variable
+        } else {
+            lc!()
+        })?;
         Ok(Self {
             variable,
             cs: self.cs.clone(),
+            value: self.value.map(|v| !v),
+            enable_lc: self.cs.should_construct_matrices()
         })
     }
 
@@ -90,11 +100,15 @@ impl<F: Field> AllocatedBool<F> {
         // -2a * b = c - a - b
         // 2a * b = a + b - c
         // (a + a) * b = a + b - c
-        self.cs.enforce_constraint(
-            lc!() + self.variable + self.variable,
-            lc!() + b.variable,
-            lc!() + self.variable + b.variable - result.variable,
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable + self.variable,
+                lc!() + b.variable,
+                lc!() + self.variable + b.variable - result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -109,11 +123,15 @@ impl<F: Field> AllocatedBool<F> {
 
         // Constrain (a) * (b) = (c), ensuring c is 1 iff
         // a AND b are both 1.
-        self.cs.enforce_constraint(
-            lc!() + self.variable,
-            lc!() + b.variable,
-            lc!() + result.variable,
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable,
+                lc!() + b.variable,
+                lc!() + result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -128,11 +146,15 @@ impl<F: Field> AllocatedBool<F> {
 
         // Constrain (1 - a) * (1 - b) = (1 - c), ensuring c is 0 iff
         // a and b are both false, and otherwise c is 1.
-        self.cs.enforce_constraint(
-            lc!() + Variable::One - self.variable,
-            lc!() + Variable::One - b.variable,
-            lc!() + Variable::One - result.variable,
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + Variable::One - self.variable,
+                lc!() + Variable::One - b.variable,
+                lc!() + Variable::One - result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -146,11 +168,15 @@ impl<F: Field> AllocatedBool<F> {
 
         // Constrain (a) * (1 - b) = (c), ensuring c is 1 iff
         // a is true and b is false, and otherwise c is 0.
-        self.cs.enforce_constraint(
-            lc!() + self.variable,
-            lc!() + Variable::One - b.variable,
-            lc!() + result.variable,
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + self.variable,
+                lc!() + Variable::One - b.variable,
+                lc!() + result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -164,11 +190,15 @@ impl<F: Field> AllocatedBool<F> {
 
         // Constrain (1 - a) * (1 - b) = (c), ensuring c is 1 iff
         // a and b are both false, and otherwise c is 0.
-        self.cs.enforce_constraint(
-            lc!() + Variable::One - self.variable,
-            lc!() + Variable::One - b.variable,
-            lc!() + result.variable,
-        )?;
+        if self.enable_lc {
+            self.cs.enforce_constraint(
+                lc!() + Variable::One - self.variable,
+                lc!() + Variable::One - b.variable,
+                lc!() + result.variable,
+            )?;
+        } else {
+            self.cs.borrow_mut().unwrap().num_constraints += 1;
+        }
 
         Ok(result)
     }
@@ -189,25 +219,37 @@ impl<F: Field> AllocVar<bool, F> for AllocatedBool<F> {
         let ns = cs.into();
         let cs = ns.cs();
         if mode == AllocationMode::Constant {
-            let variable = if *f()?.borrow() {
-                Variable::One
-            } else {
-                Variable::Zero
-            };
-            Ok(Self { variable, cs })
+            let value = *f()?.borrow();
+            Ok(Self {
+                variable: if value { Variable::One } else { Variable::Zero },
+                enable_lc: cs.should_construct_matrices(),
+                cs,
+                value: Some(value),
+            })
         } else {
+            let value = f().map(|b| *b.borrow());
             let variable = if mode == AllocationMode::Input {
-                cs.new_input_variable(|| f().map(bool_to_field))?
+                cs.new_input_variable(|| value.map(F::from))?
             } else {
-                cs.new_witness_variable(|| f().map(bool_to_field))?
+                cs.new_witness_variable(|| value.map(F::from))?
             };
+
+            let enable_lc = cs.should_construct_matrices();
 
             // Constrain: (1 - a) * a = 0
             // This constrains a to be either 0 or 1.
+            if enable_lc {
+                cs.enforce_constraint(lc!() + Variable::One - variable, lc!() + variable, lc!())?;
+            } else {
+                cs.borrow_mut().unwrap().num_constraints += 1;
+            }
 
-            cs.enforce_constraint(lc!() + Variable::One - variable, lc!() + variable, lc!())?;
-
-            Ok(Self { variable, cs })
+            Ok(Self {
+                variable,
+                enable_lc,
+                cs,
+                value: value.ok(),
+            })
         }
     }
 }

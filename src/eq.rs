@@ -123,11 +123,16 @@ impl<T: EqGadget<F> + R1CSVar<F>, F: PrimeField> EqGadget<F> for [T] {
             Ok(())
         } else {
             let cs = [&some_are_different, should_enforce].cs();
-            cs.enforce_constraint(
-                some_are_different.lc(),
-                should_enforce.lc(),
-                should_enforce.lc(),
-            )
+            if cs.should_construct_matrices() {
+                cs.enforce_constraint(
+                    some_are_different.lc(),
+                    should_enforce.lc(),
+                    should_enforce.lc(),
+                )?;
+            } else {
+                cs.borrow_mut().unwrap().num_constraints += 1;
+            }
+            Ok(())
         }
     }
 }
