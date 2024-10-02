@@ -166,7 +166,7 @@ impl<F: PrimeField> EvaluationsVar<F> {
             .map(|(coeff, eval)| coeff * eval)
             .sum::<FpVar<F>>();
 
-        Ok(interpolation)
+        Ok(interpolation.clone())
     }
 
     /// Generate interpolation constraints. We assume at compile time we know
