@@ -129,13 +129,14 @@ impl<F: PrimeField> AllocatedFp<F> {
     ///
     /// This does not create any constraints and only creates one linear
     /// combination.
-    pub fn addmany<'a, I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+    pub fn addmany<B: Borrow<Self>, I: Iterator<Item = B>>(iter: I) -> Self {
         let mut cs = ConstraintSystemRef::None;
         let mut has_value = true;
         let mut value = F::zero();
         let mut new_lc = lc!();
 
         for variable in iter {
+            let variable = variable.borrow();
             if !variable.cs.is_none() {
                 cs = cs.or(variable.cs.clone());
             }
@@ -1049,6 +1050,22 @@ impl<F: PrimeField> AllocVar<F, F> for FpVar<F> {
 
 impl<'a, F: PrimeField> Sum<&'a FpVar<F>> for FpVar<F> {
     fn sum<I: Iterator<Item = &'a FpVar<F>>>(iter: I) -> FpVar<F> {
+        let mut sum_constants = F::zero();
+        let sum_variables = FpVar::Var(AllocatedFp::<F>::addmany(iter.filter_map(|x| match x {
+            FpVar::Constant(c) => {
+                sum_constants += c;
+                None
+            },
+            FpVar::Var(v) => Some(v),
+        })));
+
+        let sum = sum_variables + sum_constants;
+        sum
+    }
+}
+
+impl<'a, F: PrimeField> Sum<FpVar<F>> for FpVar<F> {
+    fn sum<I: Iterator<Item = FpVar<F>>>(iter: I) -> FpVar<F> {
         let mut sum_constants = F::zero();
         let sum_variables = FpVar::Var(AllocatedFp::<F>::addmany(iter.filter_map(|x| match x {
             FpVar::Constant(c) => {
