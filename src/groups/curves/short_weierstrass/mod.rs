@@ -692,24 +692,56 @@ where
 
         let mut aff1_neg = NonZeroAffineVar::new(nz_aff1.x.clone(), nz_aff1.y.negate()?);
         let mut aff2_neg = NonZeroAffineVar::new(nz_aff2.x.clone(), nz_aff2.y.negate()?);
-        let mut acc = nz_aff1.add_unchecked(&nz_aff2.clone())?;
+        let acc = nz_aff1.double()?;
+
+        let sum = nz_aff1.add_unchecked(&nz_aff2)?;
+        let diff = nz_aff1.add_unchecked(&aff2_neg)?;
+        let NonZeroAffineVar { mut x, mut y, .. } = acc;
 
         // double-and-add loop
         for (bit1, bit2) in (bits1.iter().rev().skip(1).rev()).zip(bits2.iter().rev().skip(1).rev())
         {
-            let mut b = bit1.select(&nz_aff1, &aff1_neg)?;
-            acc = acc.double_and_add_unchecked(&b)?;
-            b = bit2.select(&nz_aff2, &aff2_neg)?;
-            acc = acc.add_unchecked(&b)?;
+            let xor = *bit1 ^ *bit2;
+            let xx = xor.select(&diff.x, &sum.x)?;
+            let yy = xor.select(&diff.y, &sum.y)?;
+            let yy = bit1.select(&yy, &yy.negate()?)?;
+
+            if [&x, &y].is_constant() || ([&xx, &yy].is_constant()) {
+                let p = NonZeroAffineVar::<P, F>::new(x.clone(), y.clone())
+                    .double()?
+                    .add_unchecked(&NonZeroAffineVar::new(xx, yy))?;
+                x = p.x;
+                y = p.y;
+            } else {
+                let lambda_1 = (&yy - &y).mul_by_inverse_unchecked(&(&xx - &x))?;
+                let lambda_1_square = lambda_1.square()?;
+
+                let lambda_2 = y
+                    .mul_by_inverse_unchecked(&(&x.double()? + &xx - &lambda_1_square))?
+                    .double()?
+                    - lambda_1;
+
+                let x4 = lambda_2.square()? - lambda_1_square + &xx;
+                let y4 = lambda_2 * &(&x - &x4) - &y;
+                x = x4;
+                y = y4;
+            };
         }
 
+        let mut acc = NonZeroAffineVar::new(x, y);
         // last bit
         aff1_neg = aff1_neg.add_unchecked(&acc)?;
         acc = bits1[bits1.len() - 1].select(&acc, &aff1_neg)?;
         aff2_neg = aff2_neg.add_unchecked(&acc)?;
         acc = bits2[bits1.len() - 1].select(&acc, &aff2_neg)?;
 
-        Ok(acc.into_projective())
+        acc.into_projective().add_mixed(&{
+            let mut p = diff;
+            for _ in 0..bits1.len() - 1 {
+                p = p.double()?;
+            }
+            NonZeroAffineVar::new(p.x, p.y.negate()?)
+        })
     }
 
     #[tracing::instrument(target = "r1cs", skip(scalar_bits_with_bases))]
