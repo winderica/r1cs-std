@@ -16,12 +16,16 @@ resolver = "2"
 [dependencies]
 ark-ff = { version = "0.5.0", default-features = false }
 ark-ec = { version = "0.5.0", default-features = false }
-ark-std = { version = "0.5.0", default-features = false }
+ark-std = { git = "https://github.com/arkworks-rs/std", rev = "73dcad0", default-features = false }
 ark-relations = { git = "https://github.com/arkworks-rs/snark.git", default-features = true }
 
 educe = "0.6.0"
-tracing = { version = "^0.1.0", default-features = false, features = ["attributes"] }
-itertools = { version = "0.14.0", default-features = false, features = [ "use_alloc" ] }
+tracing = { version = "^0.1.0", default-features = false, features = [
+    "attributes",
+] }
+itertools = { version = "0.14.0", default-features = false, features = [
+    "use_alloc",
+] }
 num-bigint = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 num-integer = { version = "0.1.44", default-features = false }
@@ -34,19 +38,37 @@ ark-test-curves = { version = "0.5.0", default-features = false, features = [
 ] }
 ark-poly = { version = "0.5.0", default-features = false }
 paste = "1.0"
-ark-bls12-377 = { version = "0.5.0", features = ["curve"], default-features = false }
-ark-bls12-381 = { version = "0.5.0", features = ["curve"], default-features = false }
-ark-mnt4-298 = { version = "0.5.0", features = ["curve"], default-features = false }
-ark-mnt4-753 = { version = "0.5.0", features = ["curve"], default-features = false }
+ark-bls12-377 = { version = "0.5.0", features = [
+    "curve",
+], default-features = false }
+ark-bls12-381 = { version = "0.5.0", features = [
+    "curve",
+], default-features = false }
+ark-mnt4-298 = { version = "0.5.0", features = [
+    "curve",
+], default-features = false }
+ark-mnt4-753 = { version = "0.5.0", features = [
+    "curve",
+], default-features = false }
 ark-mnt6-298 = { version = "0.5.0", default-features = false }
 ark-mnt6-753 = { version = "0.5.0", default-features = false }
-ark-pallas = { version = "0.5.0", features = ["curve"], default-features = false }
-ark-bn254 = { version = "0.5.0", features = ["curve"], default-features = false }
+ark-pallas = { version = "0.5.0", features = [
+    "curve",
+], default-features = false }
+ark-bn254 = { version = "0.5.0", features = [
+    "curve",
+], default-features = false }
 tracing-subscriber = { version = "0.3", default-features = true }
 
 [features]
 default = ["std"]
-std = ["ark-ff/std", "ark-relations/std", "ark-std/std", "num-bigint/std", "itertools/use_std" ]
+std = [
+    "ark-ff/std",
+    "ark-relations/std",
+    "ark-std/std",
+    "num-bigint/std",
+    "itertools/use_std",
+]
 parallel = ["std", "ark-ff/parallel", "ark-std/parallel"]
 
 [[bench]]

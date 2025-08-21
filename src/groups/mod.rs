@@ -222,8 +222,8 @@ mod test_sw_arithmetic {
         CurveGroup,
     };
     use ark_ff::PrimeField;
-    use ark_relations::r1cs::{ConstraintSystem, Result};
-    use ark_std::UniformRand;
+    use ark_relations::gr1cs::{ConstraintSystem, Result};
+    use ark_ff::UniformRand;
 
     fn point_scalar_mul_satisfied<G>() -> Result<bool>
     where

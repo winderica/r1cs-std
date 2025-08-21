@@ -1145,7 +1145,7 @@ mod test_sw_curve {
     };
     use ark_ff::PrimeField;
     use ark_relations::gr1cs::{ConstraintSystem, Result};
-    use ark_std::UniformRand;
+    use ark_ff::UniformRand;
     use num_traits::Zero;
 
     fn zero_point_scalar_mul_satisfied<G>() -> Result<bool>
