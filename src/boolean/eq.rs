@@ -1,12 +1,11 @@
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 
-use crate::boolean::Boolean;
-use crate::eq::EqGadget;
+use crate::{boolean::Boolean, eq::EqGadget};
 
 use super::*;
 
 impl<F: Field> EqGadget<F> for Boolean<F> {
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn is_eq(&self, other: &Self) -> Result<Boolean<F>, SynthesisError> {
         // self | other | XNOR(self, other) | self == other
         // -----|-------|-------------------|--------------
@@ -17,7 +16,7 @@ impl<F: Field> EqGadget<F> for Boolean<F> {
         Ok(!(self ^ other))
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn conditional_enforce_equal(
         &self,
         other: &Self,
@@ -26,29 +25,39 @@ impl<F: Field> EqGadget<F> for Boolean<F> {
         use Boolean::*;
         let one = Variable::One;
         // We will use the following trick: a == b <=> a - b == 0
-        // This works because a - b == 0 if and only if a = 0 and b = 0, or a = 1 and b = 1,
-        // which is exactly the definition of a == b.
-        let difference = match (self, other) {
-            // 1 == 1; 0 == 0
-            (Constant(true), Constant(true)) | (Constant(false), Constant(false)) => return Ok(()),
-            // false != true
-            (Constant(_), Constant(_)) => return Err(SynthesisError::Unsatisfiable),
-            // 1 - a
-            (Constant(true), Var(a)) | (Var(a), Constant(true)) => lc!() + one - a.variable(),
-            // a - 0 = a
-            (Constant(false), Var(a)) | (Var(a), Constant(false)) => lc!() + a.variable(),
-            // b - a,
-            (Var(a), Var(b)) => lc!() + b.variable() - a.variable(),
-        };
+        // This works because a - b == 0 if and only if a = 0 and b = 0, or a = 1 and b
+        // = 1, which is exactly the definition of a == b.
 
         if condition != &Constant(false) {
             let cs = self.cs().or(other.cs()).or(condition.cs());
-            cs.enforce_constraint(lc!() + difference, condition.lc(), lc!())?;
+            match (self, other) {
+                // 1 == 1; 0 == 0
+                (Constant(true), Constant(true)) | (Constant(false), Constant(false)) => {
+                    return Ok(())
+                },
+                // false != true
+                (Constant(_), Constant(_)) => return Err(SynthesisError::Unsatisfiable),
+                // handled below
+                (_, _) => (),
+            };
+            let difference = || match (self, other) {
+                // 1 - a
+                (Constant(true), Var(a)) | (Var(a), Constant(true)) => {
+                    lc_diff![one, a.variable()]
+                },
+                // a - 0 = a
+                (Constant(false), Var(a)) | (Var(a), Constant(false)) => a.variable().into(),
+                // b - a,
+                (Var(a), Var(b)) => lc_diff![b.variable(), a.variable()],
+                // handled above
+                (_, _) => unreachable!(),
+            };
+            cs.enforce_r1cs_constraint(difference, || condition.lc(), || lc!())?;
         }
         Ok(())
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn conditional_enforce_not_equal(
         &self,
         other: &Self,
@@ -56,25 +65,34 @@ impl<F: Field> EqGadget<F> for Boolean<F> {
     ) -> Result<(), SynthesisError> {
         use Boolean::*;
         let one = Variable::One;
-        // We will use the following trick: a != b <=> a + b == 1
-        // This works because a + b == 1 if and only if a = 0 and b = 1, or a = 1 and b = 0,
-        // which is exactly the definition of a != b.
-        let sum = match (self, other) {
-            // 1 != 0; 0 != 1
-            (Constant(true), Constant(false)) | (Constant(false), Constant(true)) => return Ok(()),
-            // false == false and true == true
-            (Constant(_), Constant(_)) => return Err(SynthesisError::Unsatisfiable),
-            // 1 + a
-            (Constant(true), Var(a)) | (Var(a), Constant(true)) => lc!() + one + a.variable(),
-            // a + 0 = a
-            (Constant(false), Var(a)) | (Var(a), Constant(false)) => lc!() + a.variable(),
-            // b + a,
-            (Var(a), Var(b)) => lc!() + b.variable() + a.variable(),
-        };
 
         if should_enforce != &Constant(false) {
             let cs = self.cs().or(other.cs()).or(should_enforce.cs());
-            cs.enforce_constraint(sum, should_enforce.lc(), lc!() + one)?;
+            // We will use the following trick: a != b <=> a + b == 1
+            // This works because a + b == 1 if and only if a = 0 and b = 1, or a = 1 and b
+            // = 0, which is exactly the definition of a != b.
+            match (self, other) {
+                // 1 != 0; 0 != 1
+                (Constant(true), Constant(false)) | (Constant(false), Constant(true)) => {
+                    return Ok(())
+                },
+                // false == false and true == true
+                (Constant(_), Constant(_)) => return Err(SynthesisError::Unsatisfiable),
+                (_, _) => (),
+            }
+            let sum = || match (self, other) {
+                // 1 + a
+                (Constant(true), Var(a)) | (Var(a), Constant(true)) => {
+                    lc![one, a.variable()]
+                },
+                // a + 0 = a
+                (Constant(false), Var(a)) | (Var(a), Constant(false)) => a.variable().into(),
+                // b + a,
+                (Var(a), Var(b)) => lc![b.variable(), a.variable()],
+                // handled above
+                (_, _) => unreachable!(),
+            };
+            cs.enforce_r1cs_constraint(sum, || should_enforce.lc(), || one.into())?;
         }
         Ok(())
     }
@@ -87,7 +105,7 @@ mod tests {
         alloc::{AllocVar, AllocationMode},
         boolean::test_utils::{run_binary_exhaustive, run_unary_exhaustive},
         prelude::EqGadget,
-        R1CSVar,
+        GR1CSVar,
     };
     use ark_test_curves::bls12_381::Fr;
 

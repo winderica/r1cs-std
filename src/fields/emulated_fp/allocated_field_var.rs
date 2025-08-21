@@ -3,17 +3,13 @@ use super::{
     reduce::{bigint_to_basefield, limbs_to_bigint, Reducer},
     AllocatedMulResultVar,
 };
-use crate::{
-    convert::{ToBitsGadget, ToBytesGadget, ToConstraintFieldGadget},
-    fields::fp::FpVar,
-    prelude::*,
-};
+use crate::{convert::ToConstraintFieldGadget, fields::fp::FpVar, prelude::*};
 use ark_ff::{BigInteger, PrimeField};
 use ark_relations::{
-    ns,
-    r1cs::{
+    gr1cs::{
         ConstraintSystemRef, Namespace, OptimizationGoal, Result as R1CSResult, SynthesisError,
     },
+    ns,
 };
 use ark_std::{
     borrow::Borrow,
@@ -131,7 +127,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Add a emulated field element
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn add(&self, other: &Self) -> R1CSResult<Self> {
         assert_eq!(self.get_optimization_type(), other.get_optimization_type());
 
@@ -156,7 +152,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Add a constant
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn add_constant(&self, other: &TargetF) -> R1CSResult<Self> {
         let other_limbs = Self::get_limbs_representations(other, self.get_optimization_type())?;
 
@@ -181,7 +177,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Subtract a emulated field element, without the final reduction step
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn sub_without_reduce(&self, other: &Self) -> R1CSResult<Self> {
         assert_eq!(self.get_optimization_type(), other.get_optimization_type());
 
@@ -256,7 +252,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Subtract a emulated field element
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn sub(&self, other: &Self) -> R1CSResult<Self> {
         assert_eq!(self.get_optimization_type(), other.get_optimization_type());
 
@@ -266,13 +262,13 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Subtract a constant
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn sub_constant(&self, other: &TargetF) -> R1CSResult<Self> {
         self.sub(&Self::constant(self.cs(), *other)?)
     }
 
     /// Multiply a emulated field element
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn mul(&self, other: &Self) -> R1CSResult<Self> {
         assert_eq!(self.get_optimization_type(), other.get_optimization_type());
 
@@ -285,16 +281,16 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Compute the negate of a emulated field element
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn negate(&self) -> R1CSResult<Self> {
         Self::zero(self.cs())?.sub(self)
     }
 
     /// Compute the inverse of a emulated field element
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn inverse(&self) -> R1CSResult<Self> {
         let inverse = Self::new_witness(self.cs(), || {
-            Ok(self.value()?.inverse().unwrap_or_else(TargetF::zero))
+            Ok(self.value()?.inverse().unwrap_or(TargetF::ZERO))
         })?;
 
         let actual_result = self.clone().mul(&inverse)?;
@@ -302,9 +298,9 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
         Ok(inverse)
     }
 
-    /// Convert a `TargetF` element into limbs (not constraints)
-    /// This is an internal function that would be reused by a number of other
-    /// functions
+    /// Convert a `TargetF` element into limbs (not constraints).
+    /// This is a utility function intended
+    /// to be reused by a number of other functions.
     pub fn get_limbs_representations(
         elem: &TargetF,
         optimization_type: OptimizationType,
@@ -345,7 +341,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     /// (without reduction) This intermediate representations can be added
     /// with each other, and they can later be reduced back to the
     /// `EmulatedFpVar`.
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn mul_without_reduce(
         &self,
         other: &Self,
@@ -453,18 +449,17 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
         );
 
         // Get p
-        let p_representations =
-            AllocatedEmulatedFpVar::<TargetF, BaseF>::get_limbs_representations_from_big_integer(
-                &<TargetF as PrimeField>::MODULUS,
-                self.get_optimization_type(),
-            )?;
+        let p_representations = Self::get_limbs_representations_from_big_integer(
+            &<TargetF as PrimeField>::MODULUS,
+            self.get_optimization_type(),
+        )?;
         let p_bigint = limbs_to_bigint(params.bits_per_limb, &p_representations);
 
         let mut p_gadget_limbs = Vec::new();
         for limb in p_representations.iter() {
             p_gadget_limbs.push(FpVar::<BaseF>::Constant(*limb));
         }
-        let p_gadget = AllocatedEmulatedFpVar::<TargetF, BaseF> {
+        let p_gadget = Self {
             cs: self.cs(),
             limbs: p_gadget_limbs,
             num_of_additions_over_normal_form: BaseF::one(),
@@ -474,8 +469,8 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
 
         // Get delta = self - other
         let cs = self.cs().or(other.cs()).or(should_enforce.cs());
-        let mut delta = self.sub_without_reduce(other)?;
-        delta = should_enforce.select(&delta, &Self::zero(cs.clone())?)?;
+        let delta = self.sub_without_reduce(other)?;
+        let delta = should_enforce.select(&delta, &Self::zero(cs.clone())?)?;
 
         // Allocate k = delta / p
         let k_gadget = FpVar::<BaseF>::new_witness(ns!(cs, "k"), || {
@@ -510,7 +505,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
         Ok(())
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub(crate) fn conditional_enforce_not_equal(
         &self,
         other: &Self,
@@ -621,10 +616,10 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
     }
 
     /// Allocates a new non-native field witness with value given by the
-    /// function `f`.  Enforces that the field element has value in `[0, modulus)`,
-    /// and returns the bits of its binary representation.
-    /// The bits are in little-endian (i.e., the bit at index 0 is the LSB) and the
-    /// bit-vector is empty in non-witness allocation modes.
+    /// function `f`. Enforces that the field element has value
+    /// in `[0, modulus)`, and returns the bits of its binary representation.
+    /// The bits are in little-endian (i.e., the bit at index 0 is the LSB) and
+    /// the bit-vector is empty in non-witness allocation modes.
     pub fn new_witness_with_le_bits<T: Borrow<TargetF>>(
         cs: impl Into<Namespace<BaseF>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -640,7 +635,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> AllocatedEmulatedFpVar<TargetF, Bas
 impl<TargetF: PrimeField, BaseF: PrimeField> ToBitsGadget<BaseF>
     for AllocatedEmulatedFpVar<TargetF, BaseF>
 {
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_bits_le(&self) -> R1CSResult<Vec<Boolean<BaseF>>> {
         let params = get_params(
             TargetF::MODULUS_BIT_SIZE as usize,
@@ -680,7 +675,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> ToBitsGadget<BaseF>
 impl<TargetF: PrimeField, BaseF: PrimeField> ToBytesGadget<BaseF>
     for AllocatedEmulatedFpVar<TargetF, BaseF>
 {
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_bytes_le(&self) -> R1CSResult<Vec<UInt8<BaseF>>> {
         let mut bits = self.to_bits_le()?;
 
@@ -696,7 +691,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> ToBytesGadget<BaseF>
 impl<TargetF: PrimeField, BaseF: PrimeField> CondSelectGadget<BaseF>
     for AllocatedEmulatedFpVar<TargetF, BaseF>
 {
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn conditionally_select(
         cond: &Boolean<BaseF>,
         true_value: &Self,
@@ -732,7 +727,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> TwoBitLookupGadget<BaseF>
 {
     type TableConstant = TargetF;
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn two_bit_lookup(
         bits: &[Boolean<BaseF>],
         constants: &[Self::TableConstant],
@@ -790,7 +785,7 @@ impl<TargetF: PrimeField, BaseF: PrimeField> ThreeBitCondNegLookupGadget<BaseF>
 {
     type TableConstant = TargetF;
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn three_bit_cond_neg_lookup(
         bits: &[Boolean<BaseF>],
         b0b1: &Boolean<BaseF>,

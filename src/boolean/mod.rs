@@ -1,7 +1,7 @@
 use ark_ff::{BitIteratorBE, Field, PrimeField};
 
 use crate::{fields::fp::FpVar, prelude::*, Vec};
-use ark_relations::r1cs::{
+use ark_relations::gr1cs::{
     ConstraintSystemRef, LinearCombination, Namespace, SynthesisError, Variable,
 };
 use core::borrow::Borrow;
@@ -26,11 +26,13 @@ mod test_utils;
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[must_use]
 pub enum Boolean<F: Field> {
+    /// A variable boolean value.
     Var(AllocatedBool<F>),
+    /// A constant boolean value.
     Constant(bool),
 }
 
-impl<F: Field> R1CSVar<F> for Boolean<F> {
+impl<F: Field> GR1CSVar<F> for Boolean<F> {
     type Value = bool;
 
     fn cs(&self) -> ConstraintSystemRef<F> {
@@ -61,10 +63,10 @@ impl<F: Field> Boolean<F> {
     /// This *does not* create any new variables or constraints.
     ///
     /// ```
-    /// # fn main() -> Result<(), ark_relations::r1cs::SynthesisError> {
+    /// # fn main() -> Result<(), ark_relations::gr1cs::SynthesisError> {
     /// // We'll use the BLS12-381 scalar field for our constraints.
     /// use ark_test_curves::bls12_381::Fr;
-    /// use ark_relations::r1cs::*;
+    /// use ark_relations::gr1cs::*;
     /// use ark_r1cs_std::prelude::*;
     ///
     /// let cs = ConstraintSystem::<Fr>::new_ref();
@@ -92,7 +94,7 @@ impl<F: Field> Boolean<F> {
     ///
     /// This *does not* create any new variables or constraints.
     /// ```
-    /// # fn main() -> Result<(), ark_relations::r1cs::SynthesisError> {
+    /// # fn main() -> Result<(), ark_relations::gr1cs::SynthesisError> {
     /// // We'll use the BLS12-381 scalar field for our constraints.
     /// use ark_test_curves::bls12_381::Fr;
     /// use ark_r1cs_std::prelude::*;
@@ -118,8 +120,22 @@ impl<F: Field> Boolean<F> {
     pub fn lc(&self) -> LinearCombination<F> {
         match self {
             &Boolean::Constant(false) => lc!(),
-            &Boolean::Constant(true) => lc!() + Variable::One,
+            &Boolean::Constant(true) => Variable::One.into(),
             Boolean::Var(v) => v.variable().into(),
+        }
+    }
+
+    /// Constructs a `Variable` from `Self`'s variables according
+    /// to the following map.
+    ///
+    /// * `Boolean::TRUE => Variable::One`
+    /// * `Boolean::FALSE => Variable::Zero``
+    /// * `Boolean::Var(v) => v.variable()`
+    pub fn variable(&self) -> Variable {
+        match self {
+            &Boolean::Constant(false) => Variable::Zero,
+            &Boolean::Constant(true) => Variable::One,
+            Boolean::Var(v) => v.variable(),
         }
     }
 
@@ -127,7 +143,7 @@ impl<F: Field> Boolean<F> {
     /// `FpVar<F>`
     ///
     /// Wraps around if the bit representation is larger than the field modulus.
-    #[tracing::instrument(target = "r1cs", skip(bits))]
+    #[tracing::instrument(target = "gr1cs", skip(bits))]
     pub fn le_bits_to_fp(bits: &[Self]) -> Result<FpVar<F>, SynthesisError>
     where
         F: PrimeField,
@@ -202,12 +218,11 @@ impl<F: Field> AllocVar<bool, F> for Boolean<F> {
 #[cfg(test)]
 mod test {
     use super::Boolean;
-    use crate::convert::ToBytesGadget;
-    use crate::prelude::*;
+    use crate::{convert::ToBytesGadget, prelude::*};
     use ark_ff::{
         AdditiveGroup, BitIteratorBE, BitIteratorLE, Field, One, PrimeField, UniformRand,
     };
-    use ark_relations::r1cs::{ConstraintSystem, SynthesisError};
+    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
     use ark_test_curves::bls12_381::Fr;
 
     #[test]

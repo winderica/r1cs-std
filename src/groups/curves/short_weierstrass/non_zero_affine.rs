@@ -1,5 +1,4 @@
 use super::*;
-use ark_ff::AdditiveGroup;
 use ark_std::ops::Add;
 
 /// An affine representation of a prime order curve point that is guaranteed
@@ -27,6 +26,7 @@ where
     F: FieldVar<P::BaseField, <P::BaseField as Field>::BasePrimeField>,
     for<'a> &'a F: FieldOpsBounds<'a, P::BaseField, F>,
 {
+    /// Creates a new non-zero affine point.
     pub fn new(x: F, y: F) -> Self {
         Self {
             x,
@@ -36,13 +36,13 @@ where
     }
 
     /// Converts self into a non-zero projective point.
-    #[tracing::instrument(target = "r1cs", skip(self))]
+    #[tracing::instrument(target = "gr1cs", skip(self))]
     pub fn into_projective(&self) -> ProjectiveVar<P, F> {
         ProjectiveVar::new(self.x.clone(), self.y.clone(), F::one())
     }
 
     /// Performs an addition without checking that other != ±self.
-    #[tracing::instrument(target = "r1cs", skip(self, other))]
+    #[tracing::instrument(target = "gr1cs", skip(self, other))]
     pub fn add_unchecked(&self, other: &Self) -> Result<Self, SynthesisError> {
         if [self, other].is_constant() {
             let result = self.value()?.add(other.value()?).into_affine();
@@ -68,7 +68,7 @@ where
 
     /// Doubles `self`. As this is a prime order curve point,
     /// the output is guaranteed to not be the point at infinity.
-    #[tracing::instrument(target = "r1cs", skip(self))]
+    #[tracing::instrument(target = "gr1cs", skip(self))]
     pub fn double(&self) -> Result<Self, SynthesisError> {
         if [self].is_constant() {
             let result = SWProjective::<P>::from(self.value()?)
@@ -100,7 +100,7 @@ where
     /// `self.double() + other`.
     ///
     /// This follows the formulae from [\[ELM03\]](https://arxiv.org/abs/math/0208038).
-    #[tracing::instrument(target = "r1cs", skip(self))]
+    #[tracing::instrument(target = "gr1cs", skip(self))]
     pub fn double_and_add_unchecked(&self, other: &Self) -> Result<Self, SynthesisError> {
         if [self].is_constant() || other.is_constant() {
             self.double()?.add_unchecked(other)
@@ -204,14 +204,14 @@ where
     }
 
     /// Doubles `self` in place.
-    #[tracing::instrument(target = "r1cs", skip(self))]
+    #[tracing::instrument(target = "gr1cs", skip(self))]
     pub fn double_in_place(&mut self) -> Result<(), SynthesisError> {
         *self = self.double()?;
         Ok(())
     }
 }
 
-impl<P, F> R1CSVar<<P::BaseField as Field>::BasePrimeField> for NonZeroAffineVar<P, F>
+impl<P, F> GR1CSVar<<P::BaseField as Field>::BasePrimeField> for NonZeroAffineVar<P, F>
 where
     P: SWCurveConfig,
     F: FieldVar<P::BaseField, <P::BaseField as Field>::BasePrimeField>,
@@ -235,7 +235,7 @@ where
     for<'a> &'a F: FieldOpsBounds<'a, P::BaseField, F>,
 {
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn conditionally_select(
         cond: &Boolean<<P::BaseField as Field>::BasePrimeField>,
         true_value: &Self,
@@ -254,7 +254,7 @@ where
     F: FieldVar<P::BaseField, <P::BaseField as Field>::BasePrimeField>,
     for<'a> &'a F: FieldOpsBounds<'a, P::BaseField, F>,
 {
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn is_eq(
         &self,
         other: &Self,
@@ -265,7 +265,7 @@ where
     }
 
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn conditional_enforce_equal(
         &self,
         other: &Self,
@@ -279,7 +279,7 @@ where
     }
 
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn enforce_equal(&self, other: &Self) -> Result<(), SynthesisError> {
         self.x.enforce_equal(&other.x)?;
         self.y.enforce_equal(&other.y)?;
@@ -287,7 +287,7 @@ where
     }
 
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn conditional_enforce_not_equal(
         &self,
         other: &Self,
@@ -308,10 +308,10 @@ mod test_non_zero_affine {
             curves::short_weierstrass::{non_zero_affine::NonZeroAffineVar, ProjectiveVar},
             CurveVar,
         },
-        R1CSVar,
+        GR1CSVar,
     };
     use ark_ec::{models::short_weierstrass::SWCurveConfig, CurveGroup};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{vec::Vec, One};
     use ark_test_curves::bls12_381::{g1::Config as G1Config, Fq};
 

@@ -13,9 +13,9 @@ use ark_r1cs_std::{
         emulated_fp::{AllocatedEmulatedFpVar, EmulatedFpVar},
         FieldVar,
     },
-    R1CSVar,
+    GR1CSVar,
 };
-use ark_relations::r1cs::{ConstraintSystem, ConstraintSystemRef};
+use ark_relations::gr1cs::{ConstraintSystem, ConstraintSystemRef};
 use ark_std::rand::RngCore;
 
 #[cfg(not(ci))]
@@ -115,6 +115,29 @@ fn multiplication_test<TargetF: PrimeField, BaseField: PrimeField, R: RngCore>(
         a_times_b,
         a_times_b_actual.into_bigint().as_ref(),
         a_times_b_expected.into_bigint().as_ref()
+    );
+}
+
+fn doubling_test<TargetF: PrimeField, BaseField: PrimeField, R: RngCore>(
+    cs: ConstraintSystemRef<BaseField>,
+    rng: &mut R,
+) {
+    let mut a_native = TargetF::rand(rng);
+    let mut a =
+        EmulatedFpVar::<TargetF, BaseField>::new_witness(ark_relations::ns!(cs, "alloc a"), || {
+            Ok(a_native)
+        })
+        .unwrap();
+
+    a.double_in_place().unwrap();
+    a_native.double_in_place();
+    let a_actual = a.value().unwrap();
+
+    assert!(
+        a_actual.eq(&a_native),
+        "a_actual = {:?}, a_native = {:?}",
+        a_actual.into_bigint().as_ref(),
+        a_native.into_bigint().as_ref()
     );
 }
 
@@ -588,6 +611,12 @@ macro_rules! nonnative_test {
         );
         nonnative_test_individual!(
             multiplication_test,
+            $test_name,
+            $test_target_field,
+            $test_base_field
+        );
+        nonnative_test_individual!(
+            doubling_test,
             $test_name,
             $test_target_field,
             $test_base_field

@@ -1,13 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 //! This crate implements common "gadgets" that make
 //! programming rank-1 constraint systems easier.
-#![deny(
-    warnings,
+#![warn(
     unused,
     future_incompatible,
     nonstandard_style,
-    rust_2018_idioms
+    rust_2018_idioms,
+    missing_docs
 )]
+#![allow(deprecated)]
 #![allow(clippy::op_ref)]
 
 #[macro_use]
@@ -26,8 +27,8 @@ pub mod macros;
 pub(crate) use ark_std::vec::Vec;
 
 #[doc(hidden)]
-pub mod r1cs_var;
-pub use r1cs_var::*;
+pub mod gr1cs_var;
+pub use gr1cs_var::*;
 
 /// This module contains `Boolean`, an R1CS equivalent of the `bool` type.
 pub mod boolean;
@@ -70,16 +71,28 @@ pub mod uint8;
 #[macro_use]
 pub mod uint;
 
+/// This module contains `UInt16`, a R1CS equivalent of the `u16` type.
 pub mod uint16 {
+    /// A `UInt16` is a variable that represents a 16-bit unsigned integer in
+    /// R1CS.
     pub type UInt16<F> = super::uint::UInt<16, u16, F>;
 }
+/// This module contains `UInt32`, a R1CS equivalent of the `u32` type.
 pub mod uint32 {
+    /// A `UInt32` is a variable that represents a 32-bit unsigned integer in
+    /// R1CS.
     pub type UInt32<F> = super::uint::UInt<32, u32, F>;
 }
+/// This module contains `UInt64`, a R1CS equivalent of the `u64` type.
 pub mod uint64 {
+    /// A `UInt64` is a variable that represents a 64-bit unsigned integer in
+    /// R1CS.
     pub type UInt64<F> = super::uint::UInt<64, u64, F>;
 }
+/// This module contains `UInt128`, a R1CS equivalent of the `u128` type.
 pub mod uint128 {
+    /// A `UInt128` is a variable that represents a 128-bit unsigned integer in
+    /// R1CS.
     pub type UInt128<F> = super::uint::UInt<128, u128, F>;
 }
 
@@ -99,18 +112,18 @@ pub mod prelude {
         uint32::UInt32,
         uint64::UInt64,
         uint8::UInt8,
-        R1CSVar,
+        GR1CSVar,
     };
 }
 
 /// A utility trait to convert `Self` to `Result<T, SynthesisErrorA`.>
 pub trait Assignment<T> {
     /// Converts `self` to `Result`.
-    fn get(self) -> Result<T, ark_relations::r1cs::SynthesisError>;
+    fn get(self) -> Result<T, ark_relations::gr1cs::SynthesisError>;
 }
 
 impl<T> Assignment<T> for Option<T> {
-    fn get(self) -> Result<T, ark_relations::r1cs::SynthesisError> {
-        self.ok_or(ark_relations::r1cs::SynthesisError::AssignmentMissing)
+    fn get(self) -> Result<T, ark_relations::gr1cs::SynthesisError> {
+        self.ok_or(ark_relations::gr1cs::SynthesisError::AssignmentMissing)
     }
 }

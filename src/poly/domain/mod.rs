@@ -4,9 +4,10 @@ use crate::{
     fields::{fp::FpVar, FieldVar},
 };
 use ark_ff::PrimeField;
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
 use ark_std::vec::Vec;
 
+/// The vanishing polynomial for a given domain.
 pub mod vanishing_poly;
 
 #[derive(Clone, Debug)]
@@ -126,12 +127,12 @@ fn truncate_to_coset_index<F: PrimeField>(
 mod tests {
     use crate::prelude::*;
     use ark_ff::PrimeField;
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{rand::Rng, test_rng};
 
     use crate::{
         alloc::AllocVar, convert::ToBitsGadget, fields::fp::FpVar, poly::domain::Radix2DomainVar,
-        R1CSVar,
+        GR1CSVar,
     };
 
     fn test_query_coset_template<F: PrimeField>() {

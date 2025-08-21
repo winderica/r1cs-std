@@ -3,15 +3,14 @@ use ark_ec::mnt6::{
     G1Prepared, G2Prepared, MNT6Config,
 };
 use ark_ff::Field;
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
+use ark_std::vec::Vec;
 
 use crate::{
-    convert::ToBytesGadget,
-    fields::{fp::FpVar, fp3::Fp3Var, FieldVar},
+    fields::{fp::FpVar, fp3::Fp3Var},
     groups::curves::short_weierstrass::ProjectiveVar,
     pairing::mnt6::PairingVar,
     prelude::*,
-    Vec,
 };
 use core::borrow::Borrow;
 use educe::Educe;
@@ -54,7 +53,7 @@ impl<P: MNT6Config> G1PreparedVar<P> {
     }
 
     /// Constructs `Self` from a `G1Var`.
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn from_group_var(q: &G1Var<P>) -> Result<Self, SynthesisError> {
         let q = q.to_affine()?;
         let zero = FpVar::<P::Fp>::zero();
@@ -71,7 +70,7 @@ impl<P: MNT6Config> G1PreparedVar<P> {
 }
 
 impl<P: MNT6Config> AllocVar<G1Prepared<P>, P::Fp> for G1PreparedVar<P> {
-    #[tracing::instrument(target = "r1cs", skip(cs, f))]
+    #[tracing::instrument(target = "gr1cs", skip(cs, f))]
     fn new_variable<T: Borrow<G1Prepared<P>>>(
         cs: impl Into<Namespace<P::Fp>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -105,7 +104,7 @@ impl<P: MNT6Config> AllocVar<G1Prepared<P>, P::Fp> for G1PreparedVar<P> {
 
 impl<P: MNT6Config> ToBytesGadget<P::Fp> for G1PreparedVar<P> {
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut x = self.x.to_bytes_le()?;
         let mut y = self.y.to_bytes_le()?;
@@ -118,7 +117,7 @@ impl<P: MNT6Config> ToBytesGadget<P::Fp> for G1PreparedVar<P> {
         Ok(x)
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_non_unique_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut x = self.x.to_non_unique_bytes_le()?;
         let mut y = self.y.to_non_unique_bytes_le()?;
@@ -154,7 +153,7 @@ pub struct G2PreparedVar<P: MNT6Config> {
 }
 
 impl<P: MNT6Config> AllocVar<G2Prepared<P>, P::Fp> for G2PreparedVar<P> {
-    #[tracing::instrument(target = "r1cs", skip(cs, f))]
+    #[tracing::instrument(target = "gr1cs", skip(cs, f))]
     fn new_variable<T: Borrow<G2Prepared<P>>>(
         cs: impl Into<Namespace<P::Fp>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -201,7 +200,7 @@ impl<P: MNT6Config> AllocVar<G2Prepared<P>, P::Fp> for G2PreparedVar<P> {
 
 impl<P: MNT6Config> ToBytesGadget<P::Fp> for G2PreparedVar<P> {
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut x = self.x.to_bytes_le()?;
         let mut y = self.y.to_bytes_le()?;
@@ -221,7 +220,7 @@ impl<P: MNT6Config> ToBytesGadget<P::Fp> for G2PreparedVar<P> {
         Ok(x)
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_non_unique_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut x = self.x.to_non_unique_bytes_le()?;
         let mut y = self.y.to_non_unique_bytes_le()?;
@@ -271,7 +270,7 @@ impl<P: MNT6Config> G2PreparedVar<P> {
     }
 
     /// Constructs `Self` from a `G2Var`.
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     pub fn from_group_var(q: &G2Var<P>) -> Result<Self, SynthesisError> {
         let q = q.to_affine()?;
         let twist_inv = P::TWIST.inverse().unwrap();
@@ -351,7 +350,7 @@ pub struct AteDoubleCoefficientsVar<P: MNT6Config> {
 }
 
 impl<P: MNT6Config> AllocVar<AteDoubleCoefficients<P>, P::Fp> for AteDoubleCoefficientsVar<P> {
-    #[tracing::instrument(target = "r1cs", skip(cs, f))]
+    #[tracing::instrument(target = "gr1cs", skip(cs, f))]
     fn new_variable<T: Borrow<AteDoubleCoefficients<P>>>(
         cs: impl Into<Namespace<P::Fp>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -379,7 +378,7 @@ impl<P: MNT6Config> AllocVar<AteDoubleCoefficients<P>, P::Fp> for AteDoubleCoeff
 
 impl<P: MNT6Config> ToBytesGadget<P::Fp> for AteDoubleCoefficientsVar<P> {
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut c_h = self.c_h.to_bytes_le()?;
         let mut c_4c = self.c_4c.to_bytes_le()?;
@@ -392,7 +391,7 @@ impl<P: MNT6Config> ToBytesGadget<P::Fp> for AteDoubleCoefficientsVar<P> {
         Ok(c_h)
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_non_unique_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut c_h = self.c_h.to_non_unique_bytes_le()?;
         let mut c_4c = self.c_4c.to_non_unique_bytes_le()?;
@@ -432,7 +431,7 @@ pub struct AteAdditionCoefficientsVar<P: MNT6Config> {
 }
 
 impl<P: MNT6Config> AllocVar<AteAdditionCoefficients<P>, P::Fp> for AteAdditionCoefficientsVar<P> {
-    #[tracing::instrument(target = "r1cs", skip(cs, f))]
+    #[tracing::instrument(target = "gr1cs", skip(cs, f))]
     fn new_variable<T: Borrow<AteAdditionCoefficients<P>>>(
         cs: impl Into<Namespace<P::Fp>>,
         f: impl FnOnce() -> Result<T, SynthesisError>,
@@ -454,7 +453,7 @@ impl<P: MNT6Config> AllocVar<AteAdditionCoefficients<P>, P::Fp> for AteAdditionC
 
 impl<P: MNT6Config> ToBytesGadget<P::Fp> for AteAdditionCoefficientsVar<P> {
     #[inline]
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut c_l1 = self.c_l1.to_bytes_le()?;
         let mut c_rz = self.c_rz.to_bytes_le()?;
@@ -463,7 +462,7 @@ impl<P: MNT6Config> ToBytesGadget<P::Fp> for AteAdditionCoefficientsVar<P> {
         Ok(c_l1)
     }
 
-    #[tracing::instrument(target = "r1cs")]
+    #[tracing::instrument(target = "gr1cs")]
     fn to_non_unique_bytes_le(&self) -> Result<Vec<UInt8<P::Fp>>, SynthesisError> {
         let mut c_l1 = self.c_l1.to_non_unique_bytes_le()?;
         let mut c_rz = self.c_rz.to_non_unique_bytes_le()?;

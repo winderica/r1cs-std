@@ -82,6 +82,7 @@ impl<F: PrimeField> LagrangeInterpolator<F> {
         lagrange_coeffs.iter().cloned().collect()
     }
 
+    /// Interpolate the polynomial at the given point.
     pub fn interpolate(&self, interpolation_point: F) -> F {
         let lagrange_coeffs = self.compute_lagrange_coefficients(interpolation_point);
         let mut interpolation = F::zero();
@@ -100,7 +101,7 @@ mod tests {
             domain::Radix2DomainVar,
             evaluations::univariate::lagrange_interpolator::LagrangeInterpolator,
         },
-        R1CSVar,
+        GR1CSVar,
     };
     use ark_ff::{FftField, Field, One};
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};

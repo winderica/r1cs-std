@@ -1,8 +1,8 @@
 use ark_ff::PrimeField;
-use ark_relations::r1cs::SynthesisError;
+use ark_relations::gr1cs::SynthesisError;
+use ark_std::vec::Vec;
 
 use crate::fields::{fp::FpVar, FieldVar};
-use ark_std::vec::Vec;
 
 /// Stores a polynomial in coefficient form, where coeffcient is represented by
 /// a list of `Fpvar<F>`.
@@ -26,16 +26,11 @@ impl<F: PrimeField> DensePolynomialVar<F> {
     /// the result. Caution for use in holographic lincheck: The output has
     /// 2 entries in one matrix
     pub fn evaluate(&self, point: &FpVar<F>) -> Result<FpVar<F>, SynthesisError> {
-        let mut result: FpVar<F> = FpVar::zero();
-        // current power of point
-        let mut curr_pow_x: FpVar<F> = FpVar::one();
-        for i in 0..self.coeffs.len() {
-            let term = &curr_pow_x * &self.coeffs[i];
-            result += &term;
-            curr_pow_x *= point;
-        }
-
-        Ok(result)
+        // Horner's Method
+        Ok(self
+            .coeffs
+            .iter()
+            .rfold(FpVar::zero(), move |acc, coeff| acc * point + coeff))
     }
 }
 
@@ -43,10 +38,10 @@ impl<F: PrimeField> DensePolynomialVar<F> {
 mod tests {
     use crate::{
         alloc::AllocVar, fields::fp::FpVar,
-        poly::polynomial::univariate::dense::DensePolynomialVar, R1CSVar,
+        poly::polynomial::univariate::dense::DensePolynomialVar, GR1CSVar,
     };
     use ark_poly::{polynomial::univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
-    use ark_relations::r1cs::ConstraintSystem;
+    use ark_relations::gr1cs::ConstraintSystem;
     use ark_std::{test_rng, vec::Vec, UniformRand};
     use ark_test_curves::bls12_381::Fr;
 
